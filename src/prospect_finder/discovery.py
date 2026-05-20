@@ -22,7 +22,11 @@ def _extract_url_from_description(description: Optional[str]) -> Optional[str]:
     if not description:
         return None
     match = _URL_RE.search(description)
-    return match.group(0) if match else None
+    if not match:
+        return None
+    url = match.group(0)
+    # Strip trailing punctuation that commonly appears after URLs in prose
+    return url.rstrip(".,;:!?)\"'")
 
 
 def _search_channel_ids(youtube, query: str, max_results: int = 50) -> list[str]:

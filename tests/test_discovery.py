@@ -32,3 +32,18 @@ def test_extract_url_no_url():
 def test_extract_url_with_path():
     desc = "Visit https://example.com/courses/hvac-prep"
     assert _extract_url_from_description(desc) == "https://example.com/courses/hvac-prep"
+
+
+def test_extract_url_strips_trailing_period():
+    desc = "Visit https://example.com."
+    assert _extract_url_from_description(desc) == "https://example.com"
+
+
+def test_extract_url_strips_trailing_comma():
+    desc = "See https://example.com, for details"
+    assert _extract_url_from_description(desc) == "https://example.com"
+
+
+def test_extract_url_strips_trailing_paren():
+    desc = "More info (https://example.com)"
+    assert _extract_url_from_description(desc) == "https://example.com"
