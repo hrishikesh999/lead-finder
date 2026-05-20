@@ -12,7 +12,7 @@ import click
 from loguru import logger
 
 from .config import Settings, load_keywords
-from .database import init_db, load_seen_sets, record_prospect
+from .database import get_trade_stats, init_db, load_seen_sets, record_prospects
 from .discovery import search_youtube_channels
 from .extraction import batch_extract
 from .models import RunStats, VerifiedProspect
@@ -246,9 +246,8 @@ def run(trade: str, limit: int, dry_run: bool) -> None:
                 TAB_FOUNDER_UNKNOWN,
             )
 
-        # Record in Neon
-        for prospect in new_a + new_b:
-            record_prospect(settings.neon_database_url, prospect)
+        # Record in Neon (single connection, batch insert)
+        record_prospects(settings.neon_database_url, new_a + new_b)
 
         stats.rows_written_founder_identified = len(new_a)
         stats.rows_written_founder_unknown = len(new_b)
@@ -293,42 +292,13 @@ def stats(trade: Optional[str]) -> None:
     settings = Settings()
     _configure_logging(settings.log_level)
 
-    import psycopg2
-
-    with psycopg2.connect(settings.neon_database_url) as conn:
-        with conn.cursor() as cur:
-            if trade:
-                cur.execute(
-                    "SELECT trade, COUNT(*) FROM prospects WHERE trade = %s GROUP BY trade;",
-                    (trade,),
-                )
-            else:
-                cur.execute(
-                    "SELECT trade, COUNT(*) FROM prospects GROUP BY trade ORDER BY trade;"
-                )
-            rows = cur.fetchall()
-
-            # Also get tab breakdown
-            if trade:
-                cur.execute(
-                    """
-                    SELECT
-                        SUM(CASE WHEN founder_email IS NOT NULL THEN 1 ELSE 0 END) AS with_email,
-                        SUM(CASE WHEN founder_name IS NOT NULL THEN 1 ELSE 0 END) AS with_founder,
-                        MAX(run_date) AS last_run
-                    FROM prospects WHERE trade = %s;
-                    """,
-                    (trade,),
-                )
-                detail = cur.fetchone()
-            else:
-                detail = None
+    trade_counts, detail = get_trade_stats(settings.neon_database_url, trade)
 
     click.echo("\n" + "=" * 40)
     click.echo("  Prospect Stats (from Neon)")
     click.echo("=" * 40)
     total = 0
-    for row in rows:
+    for row in trade_counts:
         click.echo(f"  {row[0]}: {row[1]} prospects")
         total += row[1]
     click.echo(f"  Total: {total}")

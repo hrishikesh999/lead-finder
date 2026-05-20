@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS prospects (
     run_date DATE NOT NULL,
     trade TEXT NOT NULL,
     company_name TEXT,
-    website TEXT,
+    website TEXT UNIQUE,
     founder_name TEXT,
     founder_role TEXT,
     founder_email TEXT,
@@ -42,7 +42,7 @@ INSERT INTO prospects (
     %(youtube_channel_url)s, %(youtube_subscriber_count)s, %(team_size_signal)s,
     %(has_newsletter_signal)s, %(has_lead_magnet_signal)s, %(country)s, %(notes)s
 )
-ON CONFLICT DO NOTHING;
+ON CONFLICT (website) DO NOTHING;
 """
 
 
@@ -87,11 +87,10 @@ def load_seen_sets(conn_string: str) -> tuple[set[str], set[str]]:
     return email_set, website_set
 
 
-def record_prospect(conn_string: str, prospect: VerifiedProspect) -> None:
-    """Inserts a verified prospect into Neon. ON CONFLICT DO NOTHING is a safety net."""
+def _prospect_to_params(prospect: VerifiedProspect) -> dict:
     c = prospect.channel
     e = prospect.extraction
-    params = {
+    return {
         "run_date": prospect.run_date,
         "trade": prospect.trade,
         "company_name": e.company_name or c.name,
@@ -108,8 +107,53 @@ def record_prospect(conn_string: str, prospect: VerifiedProspect) -> None:
         "country": c.country or "Unknown",
         "notes": e.notes,
     }
+
+
+def record_prospects(conn_string: str, prospects: list[VerifiedProspect]) -> None:
+    """Batch-inserts verified prospects into Neon in a single connection."""
+    if not prospects:
+        return
     with _connect(conn_string) as conn:
         with conn.cursor() as cur:
-            cur.execute(_INSERT_SQL, params)
+            for prospect in prospects:
+                cur.execute(_INSERT_SQL, _prospect_to_params(prospect))
         conn.commit()
-    logger.debug("Recorded prospect in Neon: {}", c.website_url)
+    logger.info("Recorded {} prospects in Neon", len(prospects))
+
+
+def get_trade_stats(
+    conn_string: str, trade: str | None = None
+) -> tuple[list[tuple], tuple | None]:
+    """
+    Returns (trade_counts, detail) where:
+    - trade_counts: list of (trade, count) rows
+    - detail: (with_email, with_founder, last_run) for the filtered trade, or None
+    """
+    with _connect(conn_string) as conn:
+        with conn.cursor() as cur:
+            if trade:
+                cur.execute(
+                    "SELECT trade, COUNT(*) FROM prospects WHERE trade = %s GROUP BY trade;",
+                    (trade,),
+                )
+            else:
+                cur.execute(
+                    "SELECT trade, COUNT(*) FROM prospects GROUP BY trade ORDER BY trade;"
+                )
+            trade_counts = cur.fetchall()
+
+            detail = None
+            if trade:
+                cur.execute(
+                    """
+                    SELECT
+                        SUM(CASE WHEN founder_email IS NOT NULL THEN 1 ELSE 0 END),
+                        SUM(CASE WHEN founder_name IS NOT NULL THEN 1 ELSE 0 END),
+                        MAX(run_date)
+                    FROM prospects WHERE trade = %s;
+                    """,
+                    (trade,),
+                )
+                detail = cur.fetchone()
+
+    return trade_counts, detail
