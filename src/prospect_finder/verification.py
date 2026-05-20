@@ -30,7 +30,12 @@ def find_email_for_founder(
     """
     Hunter.io Email Finder. Used when Claude identified a founder name.
     Returns (email, confidence) or None.
+    Falls back to domain search if last_name is empty (single-name founders).
     """
+    if not last_name:
+        logger.debug("No last name for founder '{}' on {}, falling back to domain search", first_name, domain)
+        return find_email_for_domain(domain, settings)
+
     params = {
         "domain": domain,
         "first_name": first_name,

@@ -4,6 +4,7 @@ import asyncio
 import json
 import re
 from typing import Optional
+from urllib.parse import urlparse
 
 import httpx
 from anthropic import Anthropic
@@ -29,7 +30,8 @@ _CLAUDE_SYSTEM_PROMPT = (
 _CLAUDE_USER_PROMPT_TEMPLATE = """\
 You are extracting structured data from website HTML for a B2B prospect list.
 
-The target is trades exam prep businesses ({trade} exam preparation courses, study guides, or practice tests).
+Website URL: {url}
+Target trade: {trade} exam preparation courses, study guides, or practice tests.
 
 Given the HTML content below, return ONLY a JSON object with these fields. No prose, no markdown, just JSON.
 
@@ -76,8 +78,6 @@ def _strip_html(html: str) -> str:
 def _build_follow_urls(base_url: str) -> list[str]:
     """Returns follow-up URLs for about/team pages, normalized to root domain."""
     try:
-        from urllib.parse import urlparse
-
         parsed = urlparse(base_url)
         root = f"{parsed.scheme}://{parsed.netloc}"
         return [f"{root}{path}" for path in _FOLLOW_PATHS]
@@ -151,7 +151,9 @@ async def fetch_and_extract(
             return None
 
         combined = "\n\n---PAGE BREAK---\n\n".join(pages_text)
-        result = _call_claude(anthropic_client, combined, url, trade, settings.claude_model)
+        result = await asyncio.to_thread(
+            _call_claude, anthropic_client, combined, url, trade, settings.claude_model
+        )
 
         if result and result.founder_name:
             return EnrichedCandidate(
@@ -170,8 +172,8 @@ async def fetch_and_extract(
 
         if pages_fetched > 1 or not result:
             combined = "\n\n---PAGE BREAK---\n\n".join(pages_text)
-            result = _call_claude(
-                anthropic_client, combined, url, trade, settings.claude_model
+            result = await asyncio.to_thread(
+                _call_claude, anthropic_client, combined, url, trade, settings.claude_model
             )
 
         if result is None:
