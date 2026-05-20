@@ -1,0 +1,58 @@
+name: Run Prospect Finder
+
+on:
+  workflow_dispatch:
+    inputs:
+      trade:
+        description: "Trade vertical to search"
+        required: true
+        type: choice
+        options:
+          - hvac
+          - electrical
+          - plumbing
+          - cdl
+      limit:
+        description: "Max candidates to process"
+        required: false
+        default: "400"
+        type: string
+      dry_run:
+        description: "Dry run (skip Hunter.io and all writes)"
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  find-prospects:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run prospect finder
+        run: |
+          uv run prospect-finder run \
+            --trade ${{ inputs.trade }} \
+            --limit ${{ inputs.limit }} \
+            ${{ inputs.dry_run == 'true' && '--dry-run' || '' }}
+        env:
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          HUNTER_API_KEY: ${{ secrets.HUNTER_API_KEY }}
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          GOOGLE_SHEETS_CREDENTIALS_JSON: ${{ secrets.GOOGLE_SHEETS_CREDENTIALS_JSON }}
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}

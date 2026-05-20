@@ -1,0 +1,30 @@
+hvac:
+  - "HVAC exam prep"
+  - "EPA 608 study"
+  - "HVAC license exam"
+  - "HVAC certification course"
+  - "HVAC technician certification"
+  - "refrigeration exam prep"
+
+electrical:
+  - "electrical exam prep"
+  - "journeyman electrician exam"
+  - "master electrician test"
+  - "NEC code exam"
+  - "electrical license study"
+  - "journeyman electrician certification"
+
+plumbing:
+  - "plumbing exam prep"
+  - "plumbing license exam"
+  - "journeyman plumber test"
+  - "master plumber exam"
+  - "plumbing code exam study"
+
+cdl:
+  - "CDL exam prep"
+  - "CDL practice test"
+  - "CDL training course"
+  - "commercial driver license study"
+  - "CDL permit test"
+  - "CDL air brakes test"
