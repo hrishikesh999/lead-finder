@@ -27,11 +27,25 @@ _CLAUDE_SYSTEM_PROMPT = (
     "rather than guessing."
 )
 
+_ENTERPRISE_PLAYERS: dict[str, str] = {
+    "US": "Kaplan, Penn Foster, ABA, Becker, Mike Holt Enterprises, ICC, NASCLA, AHIT, Cengage, Wiley, McGraw-Hill",
+    "CA": "Kaplan, Pearson VUE, Humber College, George Brown College, Algonquin College",
+    "GB": "City & Guilds, EAL, BPEC, Logic4training, Pearson, NOCN, Training Express, CORGI",
+    "AU": "TAFE, Pearson, Cengage, Wiley, Builders Academy Australia, Master Builders",
+}
+_COUNTRY_LABELS: dict[str, str] = {
+    "US": "United States",
+    "CA": "Canada",
+    "GB": "United Kingdom",
+    "AU": "Australia",
+}
+
 _CLAUDE_USER_PROMPT_TEMPLATE = """\
 You are extracting structured data from website HTML for a B2B prospect list.
 
 Website URL: {url}
 Target trade: {trade} exam preparation courses, study guides, or practice tests.
+Target country: {country_label}
 
 Given the HTML content below, return ONLY a JSON object with these fields. No prose, no markdown, just JSON.
 
@@ -50,8 +64,8 @@ Given the HTML content below, return ONLY a JSON object with these fields. No pr
 
 Target trade for this extraction: {trade}
 
-Known enterprise players to flag as is_enterprise_player=true:
-- Kaplan, Penn Foster, ABA, Becker, Mike Holt Enterprises, ICC, NASCLA, AHIT, Cengage, Wiley, McGraw-Hill
+Known enterprise players in {country_label} to flag as is_enterprise_player=true:
+- {enterprise_list}
 
 Definitions:
 - "solo" = clearly one person running it
@@ -103,10 +117,15 @@ def _call_claude(
     content: str,
     url: str,
     trade: str,
+    country_code: str,
     model: str,
 ) -> Optional[ExtractionResult]:
     prompt = _CLAUDE_USER_PROMPT_TEMPLATE.format(
-        trade=trade, url=url, content=content
+        trade=trade,
+        url=url,
+        content=content,
+        country_label=_COUNTRY_LABELS.get(country_code, country_code),
+        enterprise_list=_ENTERPRISE_PLAYERS.get(country_code, _ENTERPRISE_PLAYERS["US"]),
     )
     try:
         message = client.messages.create(
@@ -130,6 +149,7 @@ def _call_claude(
 async def fetch_and_extract(
     candidate: CandidateChannel,
     trade: str,
+    country_code: str,
     settings: Settings,
     client: httpx.AsyncClient,
     anthropic_client: Anthropic,
@@ -152,7 +172,7 @@ async def fetch_and_extract(
 
         combined = "\n\n---PAGE BREAK---\n\n".join(pages_text)
         result = await asyncio.to_thread(
-            _call_claude, anthropic_client, combined, url, trade, settings.claude_model
+            _call_claude, anthropic_client, combined, url, trade, country_code, settings.claude_model
         )
 
         if result and result.founder_name:
@@ -173,7 +193,7 @@ async def fetch_and_extract(
         if pages_fetched > 1 or not result:
             combined = "\n\n---PAGE BREAK---\n\n".join(pages_text)
             result = await asyncio.to_thread(
-                _call_claude, anthropic_client, combined, url, trade, settings.claude_model
+                _call_claude, anthropic_client, combined, url, trade, country_code, settings.claude_model
             )
 
         if result is None:
@@ -188,6 +208,7 @@ async def fetch_and_extract(
 async def batch_extract(
     candidates: list[CandidateChannel],
     trade: str,
+    country_code: str,
     settings: Settings,
 ) -> list[EnrichedCandidate]:
     """Runs fetch_and_extract for all candidates concurrently."""
@@ -211,6 +232,7 @@ async def batch_extract(
             fetch_and_extract(
                 candidate=c,
                 trade=trade,
+                country_code=country_code,
                 settings=settings,
                 client=http_client,
                 anthropic_client=anthropic_client,

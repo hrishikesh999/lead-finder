@@ -40,8 +40,8 @@ class Settings(BaseSettings):
         return json.loads(self.google_sheets_credentials_json)
 
 
-def load_keywords(trade: str) -> list[str]:
-    """Loads keywords for the given trade from config/keywords.yaml."""
+def load_keywords(trade: str, country: str) -> list[str]:
+    """Loads keywords for the given trade+country combination from config/keywords.yaml."""
     keywords_path = Path(__file__).parent.parent.parent / "config" / "keywords.yaml"
     with keywords_path.open() as f:
         data = yaml.safe_load(f)
@@ -50,4 +50,10 @@ def load_keywords(trade: str) -> list[str]:
             f"Trade '{trade}' not found in keywords.yaml. "
             f"Available: {list(data.keys())}"
         )
-    return data[trade]
+    trade_data = data[trade]
+    if country not in trade_data:
+        raise KeyError(
+            f"No keywords for trade='{trade}' country='{country}'. "
+            f"Valid countries for '{trade}': {list(trade_data.keys())}"
+        )
+    return trade_data[country]

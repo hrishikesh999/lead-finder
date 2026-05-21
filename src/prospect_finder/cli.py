@@ -45,6 +45,15 @@ def _split_name(full_name: str) -> tuple[str, str]:
     return (parts[0], parts[1] if len(parts) > 1 else "")
 
 
+_VALID_TRADES = [
+    "hvac", "electrical", "plumbing", "gas", "welding",
+    "cdl", "hgv", "heavy_vehicle", "heavy_equipment",
+    "auto_mechanic", "cosmetology", "barbering", "real_estate",
+    "general_contractor", "home_inspector", "solar", "cscs", "white_card",
+]
+_COUNTRY_CODES = {"us": "US", "ca": "CA", "uk": "GB", "au": "AU"}
+
+
 @click.group()
 def main():
     """Trades Exam Prep Prospect Finder."""
@@ -55,8 +64,14 @@ def main():
 @click.option(
     "--trade",
     required=True,
-    type=click.Choice(["hvac", "electrical", "plumbing", "cdl"]),
+    type=click.Choice(_VALID_TRADES),
     help="Trade vertical to search",
+)
+@click.option(
+    "--country",
+    required=True,
+    type=click.Choice(["us", "ca", "uk", "au"]),
+    help="Country to target (us, ca, uk, au)",
 )
 @click.option(
     "--limit",
@@ -70,22 +85,28 @@ def main():
     default=False,
     help="Skip Hunter.io and Sheet/DB writes; print results to terminal",
 )
-def run(trade: str, limit: int, dry_run: bool) -> None:
+def run(trade: str, country: str, limit: int, dry_run: bool) -> None:
     """Run the full prospect discovery pipeline for a given trade."""
     start_time = time.monotonic()
     settings = Settings()
     _configure_logging(settings.log_level)
 
+    country_code = _COUNTRY_CODES[country]
+
     logger.info(
-        "Starting prospect finder: trade={}, limit={}, dry_run={}", trade, limit, dry_run
+        "Starting prospect finder: trade={}, country={}, limit={}, dry_run={}",
+        trade, country_code, limit, dry_run,
     )
 
     stats = RunStats(trade=trade)
     today = date.today()
 
     # ── Load keywords ────────────────────────────────────────────────────────
-    keywords = load_keywords(trade)
-    logger.info("Loaded {} keywords for trade '{}'", len(keywords), trade)
+    keywords = load_keywords(trade, country)
+    logger.info("Loaded {} keywords for trade='{}' country='{}'", len(keywords), trade, country_code)
+
+    # ── Override allowed_countries to target only the requested country ──────
+    settings = settings.model_copy(update={"allowed_countries": country_code})
 
     # ── Init DB and load dedup sets ──────────────────────────────────────────
     email_set: set[str] = set()
@@ -117,7 +138,7 @@ def run(trade: str, limit: int, dry_run: bool) -> None:
     limited = deduped[:limit]
 
     # ── Async website extraction ─────────────────────────────────────────────
-    enriched = asyncio.run(batch_extract(limited, trade, settings))
+    enriched = asyncio.run(batch_extract(limited, trade, country_code, settings))
     stats.channels_extracted = len(enriched)
 
     # ── Filter enterprise players ────────────────────────────────────────────
@@ -283,7 +304,7 @@ def _print_summary(stats: RunStats, dry_run: bool) -> None:
 @click.option(
     "--trade",
     required=False,
-    type=click.Choice(["hvac", "electrical", "plumbing", "cdl"]),
+    type=click.Choice(_VALID_TRADES),
     default=None,
     help="Filter stats to a specific trade (omit for all trades)",
 )

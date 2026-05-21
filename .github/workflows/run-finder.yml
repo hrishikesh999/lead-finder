@@ -11,7 +11,30 @@ on:
           - hvac
           - electrical
           - plumbing
+          - gas
+          - welding
           - cdl
+          - hgv
+          - heavy_vehicle
+          - heavy_equipment
+          - auto_mechanic
+          - cosmetology
+          - barbering
+          - real_estate
+          - general_contractor
+          - home_inspector
+          - solar
+          - cscs
+          - white_card
+      country:
+        description: "Country to target"
+        required: true
+        type: choice
+        options:
+          - us
+          - ca
+          - uk
+          - au
       limit:
         description: "Max candidates to process"
         required: false
@@ -47,6 +70,7 @@ jobs:
         run: |
           uv run prospect-finder run \
             --trade ${{ inputs.trade }} \
+            --country ${{ inputs.country }} \
             --limit ${{ inputs.limit }} \
             ${{ inputs.dry_run == 'true' && '--dry-run' || '' }}
         env:
