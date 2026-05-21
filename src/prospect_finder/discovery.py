@@ -10,7 +10,10 @@ from loguru import logger
 from .config import Settings
 from .models import CandidateChannel
 
-_URL_RE = re.compile(r"https?://[^\s\"'<>]+", re.IGNORECASE)
+_URL_RE = re.compile(
+    r"https?://[^\s\"'<>]+|(?<![/\w])www\.[a-zA-Z0-9][^\s\"'<>]*",
+    re.IGNORECASE,
+)
 
 
 def _build_youtube_client(api_key: str):
@@ -25,8 +28,10 @@ def _extract_url_from_description(description: Optional[str]) -> Optional[str]:
     if not match:
         return None
     url = match.group(0)
-    # Strip trailing punctuation that commonly appears after URLs in prose
-    return url.rstrip(".,;:!?)\"'")
+    url = url.rstrip(".,;:!?)\"'")
+    if url.lower().startswith("www."):
+        url = "https://" + url
+    return url
 
 
 def _search_channel_ids(youtube, query: str, max_results: int = 50) -> list[str]:
@@ -52,6 +57,42 @@ def _search_channel_ids(youtube, query: str, max_results: int = 50) -> list[str]
         for item in response.get("items", []):
             cid = item["id"].get("channelId")
             if cid:
+                channel_ids.append(cid)
+
+        next_page_token = response.get("nextPageToken")
+        if not next_page_token:
+            break
+
+    return channel_ids
+
+
+def _search_channel_ids_from_videos(youtube, query: str, max_results: int = 50) -> list[str]:
+    """
+    Searches for videos matching the query and extracts unique channel IDs.
+    Surfaces creators who upload exam-prep content but don't appear in channel
+    searches — typically the most active, niche instructors.
+    Quota cost: 100 units per page.
+    """
+    channel_ids: list[str] = []
+    seen: set[str] = set()
+    next_page_token = None
+
+    while len(channel_ids) < max_results:
+        batch_size = min(50, max_results - len(channel_ids))
+        params: dict = {
+            "part": "snippet",
+            "q": query,
+            "type": "video",
+            "maxResults": batch_size,
+        }
+        if next_page_token:
+            params["pageToken"] = next_page_token
+
+        response = youtube.search().list(**params).execute()
+        for item in response.get("items", []):
+            cid = item.get("snippet", {}).get("channelId")
+            if cid and cid not in seen:
+                seen.add(cid)
                 channel_ids.append(cid)
 
         next_page_token = response.get("nextPageToken")
@@ -132,6 +173,8 @@ def search_youtube_channels(
 ) -> list[CandidateChannel]:
     """
     Discovers candidate channels for a given trade across all keywords.
+    Runs both channel-search and video-search per keyword so that niche
+    instructors who don't appear in channel results are still surfaced.
     Deduplicates by channel_id. Drops channels with no website URL.
     """
     youtube = _build_youtube_client(settings.youtube_api_key)
@@ -141,13 +184,28 @@ def search_youtube_channels(
     for keyword in keywords:
         logger.info("Searching YouTube: '{}'", keyword)
         try:
+            # Channel search: finds dedicated exam-prep channels
             channel_ids = _search_channel_ids(youtube, keyword, max_results_per_keyword)
-            new_ids = [cid for cid in channel_ids if cid not in seen_channel_ids]
+            # Video search: finds active instructors who may not rank in channel search
+            video_channel_ids = _search_channel_ids_from_videos(
+                youtube, keyword, max_results_per_keyword
+            )
+            combined_ids = list(dict.fromkeys(channel_ids + video_channel_ids))
+
+            new_ids = [cid for cid in combined_ids if cid not in seen_channel_ids]
             seen_channel_ids.update(new_ids)
 
             if not new_ids:
                 logger.debug("No new channels for keyword '{}'", keyword)
                 continue
+
+            logger.debug(
+                "Keyword '{}': {} channel-search + {} video-search = {} unique new",
+                keyword,
+                len(channel_ids),
+                len(video_channel_ids),
+                len(new_ids),
+            )
 
             candidates = _fetch_channel_details(youtube, new_ids, settings)
 

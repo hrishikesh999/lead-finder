@@ -47,3 +47,18 @@ def test_extract_url_strips_trailing_comma():
 def test_extract_url_strips_trailing_paren():
     desc = "More info (https://example.com)"
     assert _extract_url_from_description(desc) == "https://example.com"
+
+
+def test_extract_url_www_without_scheme():
+    desc = "Check out www.example.com for study guides"
+    assert _extract_url_from_description(desc) == "https://www.example.com"
+
+
+def test_extract_url_www_strips_trailing():
+    desc = "Visit www.example.com."
+    assert _extract_url_from_description(desc) == "https://www.example.com"
+
+
+def test_extract_url_prefers_https_over_www():
+    desc = "See https://example.com and www.other.com"
+    assert _extract_url_from_description(desc) == "https://example.com"
