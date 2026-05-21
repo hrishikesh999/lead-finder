@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import time
 from typing import Optional
 from urllib.parse import urlparse
 
@@ -17,7 +18,7 @@ from .models import CandidateChannel, EnrichedCandidate, ExtractionResult
 _FOLLOW_PATHS = ["/about", "/about-us", "/team", "/our-story", "/contact"]
 _MAX_PAGES = 5
 _FETCH_TIMEOUT = 15.0
-_MAX_CONCURRENT = 20
+_MAX_CONCURRENT = 8
 _MAX_HTML_CHARS = 40_000
 
 _CLAUDE_SYSTEM_PROMPT = (
@@ -127,23 +128,31 @@ def _call_claude(
         country_label=_COUNTRY_LABELS.get(country_code, country_code),
         enterprise_list=_ENTERPRISE_PLAYERS.get(country_code, _ENTERPRISE_PLAYERS["US"]),
     )
-    try:
-        message = client.messages.create(
-            model=model,
-            max_tokens=1024,
-            system=_CLAUDE_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        raw = message.content[0].text.strip()
-        # Strip markdown fences if Claude wraps the JSON
-        if raw.startswith("```"):
-            raw = re.sub(r"^```[a-z]*\n?", "", raw)
-            raw = re.sub(r"\n?```$", "", raw)
-        data = json.loads(raw)
-        return ExtractionResult(**data)
-    except Exception as exc:
-        logger.warning("Claude extraction failed for {}: {}", url, exc)
-        return None
+    for attempt in range(3):
+        try:
+            message = client.messages.create(
+                model=model,
+                max_tokens=1024,
+                system=_CLAUDE_SYSTEM_PROMPT,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            raw = message.content[0].text.strip()
+            if raw.startswith("```"):
+                raw = re.sub(r"^```[a-z]*\n?", "", raw)
+                raw = re.sub(r"\n?```$", "", raw)
+            data = json.loads(raw)
+            return ExtractionResult(**data)
+        except Exception as exc:
+            msg = str(exc)
+            if "rate_limit_error" in msg or "529" in msg:
+                wait = 30 * (2 ** attempt)
+                logger.debug("Claude rate limit hit for {}, retrying in {}s", url, wait)
+                time.sleep(wait)
+                continue
+            logger.warning("Claude extraction failed for {}: {}", url, exc)
+            return None
+    logger.warning("Claude extraction failed after retries for {}", url)
+    return None
 
 
 async def fetch_and_extract(

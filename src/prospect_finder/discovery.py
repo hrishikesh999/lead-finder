@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import time
 from typing import Optional
+from urllib.parse import urlparse
 
 from googleapiclient.discovery import build
 from loguru import logger
@@ -15,23 +16,44 @@ _URL_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Domains that are social-media profiles or platforms, not business websites.
+# URLs from these domains are useless for email finding.
+_JUNK_DOMAINS = {
+    "facebook.com", "fb.com",
+    "instagram.com",
+    "twitter.com", "x.com",
+    "youtube.com", "youtu.be",
+    "tiktok.com",
+    "linkedin.com",
+    "t.me", "telegram.me",
+    "discord.gg", "discord.com",
+    "linktr.ee",
+    "bit.ly", "tinyurl.com",
+}
+
 
 def _build_youtube_client(api_key: str):
     return build("youtube", "v3", developerKey=api_key, cache_discovery=False)
 
 
 def _extract_url_from_description(description: Optional[str]) -> Optional[str]:
-    """Returns the first HTTP/HTTPS URL found in a channel description."""
+    """Returns the first business website URL found in a channel description.
+    Skips social media, YouTube, and other non-business domains.
+    """
     if not description:
         return None
-    match = _URL_RE.search(description)
-    if not match:
-        return None
-    url = match.group(0)
-    url = url.rstrip(".,;:!?)\"'")
-    if url.lower().startswith("www."):
-        url = "https://" + url
-    return url
+    for match in _URL_RE.finditer(description):
+        url = match.group(0).rstrip(".,;:!?)\"'")
+        if url.lower().startswith("www."):
+            url = "https://" + url
+        try:
+            host = urlparse(url).netloc.lower().lstrip("www.")
+            if any(host == d or host.endswith("." + d) for d in _JUNK_DOMAINS):
+                continue
+        except Exception:
+            continue
+        return url
+    return None
 
 
 def _search_channel_ids(youtube, query: str, max_results: int = 50) -> list[str]:
@@ -66,39 +88,27 @@ def _search_channel_ids(youtube, query: str, max_results: int = 50) -> list[str]
     return channel_ids
 
 
-def _search_channel_ids_from_videos(youtube, query: str, max_results: int = 50) -> list[str]:
+def _search_channel_ids_from_videos(youtube, query: str) -> list[str]:
     """
-    Searches for videos matching the query and extracts unique channel IDs.
-    Surfaces creators who upload exam-prep content but don't appear in channel
-    searches — typically the most active, niche instructors.
-    Quota cost: 100 units per page.
+    Single-page video search — extracts unique channel IDs from up to 50 results.
+    Kept to one page deliberately: video dedup means 50 videos yield far fewer
+    unique channels, so paginating to hit a target would burn quota unpredictably.
+    Quota cost: exactly 100 units (one call, no pagination).
     """
-    channel_ids: list[str] = []
+    params: dict = {
+        "part": "snippet",
+        "q": query,
+        "type": "video",
+        "maxResults": 50,
+    }
+    response = youtube.search().list(**params).execute()
     seen: set[str] = set()
-    next_page_token = None
-
-    while len(channel_ids) < max_results:
-        batch_size = min(50, max_results - len(channel_ids))
-        params: dict = {
-            "part": "snippet",
-            "q": query,
-            "type": "video",
-            "maxResults": batch_size,
-        }
-        if next_page_token:
-            params["pageToken"] = next_page_token
-
-        response = youtube.search().list(**params).execute()
-        for item in response.get("items", []):
-            cid = item.get("snippet", {}).get("channelId")
-            if cid and cid not in seen:
-                seen.add(cid)
-                channel_ids.append(cid)
-
-        next_page_token = response.get("nextPageToken")
-        if not next_page_token:
-            break
-
+    channel_ids: list[str] = []
+    for item in response.get("items", []):
+        cid = item.get("snippet", {}).get("channelId")
+        if cid and cid not in seen:
+            seen.add(cid)
+            channel_ids.append(cid)
     return channel_ids
 
 
@@ -187,9 +197,7 @@ def search_youtube_channels(
             # Channel search: finds dedicated exam-prep channels
             channel_ids = _search_channel_ids(youtube, keyword, max_results_per_keyword)
             # Video search: finds active instructors who may not rank in channel search
-            video_channel_ids = _search_channel_ids_from_videos(
-                youtube, keyword, max_results_per_keyword
-            )
+            video_channel_ids = _search_channel_ids_from_videos(youtube, keyword)
             combined_ids = list(dict.fromkeys(channel_ids + video_channel_ids))
 
             new_ids = [cid for cid in combined_ids if cid not in seen_channel_ids]

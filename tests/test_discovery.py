@@ -62,3 +62,23 @@ def test_extract_url_www_strips_trailing():
 def test_extract_url_prefers_https_over_www():
     desc = "See https://example.com and www.other.com"
     assert _extract_url_from_description(desc) == "https://example.com"
+
+
+def test_extract_url_skips_facebook():
+    desc = "Follow us at https://facebook.com/mypage or visit https://hvacschool.com"
+    assert _extract_url_from_description(desc) == "https://hvacschool.com"
+
+
+def test_extract_url_skips_youtube():
+    desc = "Subscribe https://youtube.com/channel/ABC or www.mysite.com"
+    assert _extract_url_from_description(desc) == "https://www.mysite.com"
+
+
+def test_extract_url_skips_instagram():
+    desc = "instagram.com/user"
+    assert _extract_url_from_description(desc) is None
+
+
+def test_extract_url_skips_all_junk():
+    desc = "Follow me on https://facebook.com/page and https://instagram.com/user"
+    assert _extract_url_from_description(desc) is None
