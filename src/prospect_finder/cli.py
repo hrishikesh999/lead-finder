@@ -15,6 +15,7 @@ from .config import Settings, load_keywords
 from .database import get_trade_stats, init_db, load_seen_sets, record_prospects
 from .discovery import search_youtube_channels
 from .extraction import batch_extract
+from .sources import discover_via_google_cse, discover_via_podcasts
 from .models import RunStats, VerifiedProspect
 from .sheets import (
     TAB_FOUNDER_IDENTIFIED,
@@ -115,15 +116,30 @@ def run(trade: str, country: str, limit: int, dry_run: bool) -> None:
         init_db(settings.neon_database_url)
         email_set, website_set = load_seen_sets(settings.neon_database_url)
 
-    # ── YouTube Discovery ────────────────────────────────────────────────────
-    raw_candidates = search_youtube_channels(
+    # ── Multi-source Discovery ───────────────────────────────────────────────
+    yt_candidates = search_youtube_channels(
         trade=trade,
         keywords=keywords,
         settings=settings,
         max_results_per_keyword=50,
     )
+    cse_candidates = discover_via_google_cse(keywords, country_code, settings)
+    podcast_candidates = discover_via_podcasts(keywords, country_code)
+
+    # Merge all sources, deduplicating by domain
+    seen_domains: set[str] = set()
+    raw_candidates: list = []
+    for c in yt_candidates + cse_candidates + podcast_candidates:
+        d = _extract_domain(c.website_url or "")
+        if d and d not in seen_domains:
+            seen_domains.add(d)
+            raw_candidates.append(c)
+
     stats.channels_discovered = len(raw_candidates)
-    logger.info("Discovered {} channels", stats.channels_discovered)
+    logger.info(
+        "Discovered {} total ({} YouTube, {} CSE, {} podcasts)",
+        len(raw_candidates), len(yt_candidates), len(cse_candidates), len(podcast_candidates),
+    )
 
     # ── Website dedup filter ─────────────────────────────────────────────────
     deduped = [
