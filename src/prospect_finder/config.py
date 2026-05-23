@@ -31,10 +31,9 @@ class Settings(BaseSettings):
     claude_model: str = "claude-haiku-4-5-20251001"
     log_level: str = "INFO"
 
-    # Optional: Google Custom Search Engine (direct website discovery)
-    # If not set, CSE discovery is silently skipped.
-    google_cse_api_key: Optional[str] = None
-    google_cse_cx: Optional[str] = None
+    # Optional: Brave Search API (direct website discovery)
+    # If not set, Brave Search discovery is silently skipped.
+    brave_search_api_key: Optional[str] = None
 
     @property
     def allowed_countries_set(self) -> set[str]:

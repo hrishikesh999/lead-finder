@@ -1,37 +1,39 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
+import httpx
 import pytest
 import respx
-import httpx
 
 from prospect_finder.sources import (
     _domain,
-    _root_url,
     _is_blocked,
-    _CSE_EXCLUDED_DOMAINS,
     _PODCAST_HOSTING_DOMAINS,
-    discover_via_google_cse,
+    _root_url,
+    _SEARCH_EXCLUDED_DOMAINS,
+    discover_via_brave_search,
     discover_via_podcasts,
 )
 
-_CSE_RESPONSE = {
-    "items": [
-        {
-            "link": "https://hvacschool.com/study-guide",
-            "title": "HVAC School Study Guide",
-            "snippet": "Best HVAC exam prep resource",
-        },
-        {
-            "link": "https://youtube.com/channel/ABC",
-            "title": "YouTube channel",
-            "snippet": "Should be filtered",
-        },
-        {
-            "link": "https://examprep.com/hvac",
-            "title": "HVAC Exam Prep",
-            "snippet": "Study for your HVAC license",
-        },
-    ]
+_BRAVE_RESPONSE = {
+    "web": {
+        "results": [
+            {
+                "url": "https://hvacschool.com/study-guide",
+                "title": "HVAC School Study Guide",
+                "description": "Best HVAC exam prep resource",
+            },
+            {
+                "url": "https://youtube.com/channel/ABC",
+                "title": "YouTube channel",
+                "description": "Should be filtered",
+            },
+            {
+                "url": "https://examprep.com/hvac",
+                "title": "HVAC Exam Prep",
+                "description": "Study for your HVAC license",
+            },
+        ]
+    }
 }
 
 _PODCAST_RESPONSE = {
@@ -55,10 +57,9 @@ _PODCAST_RESPONSE = {
 }
 
 
-def _mock_settings(with_cse=True):
+def _mock_settings(with_brave=True):
     m = MagicMock()
-    m.google_cse_api_key = "test-key" if with_cse else None
-    m.google_cse_cx = "test-cx" if with_cse else None
+    m.brave_search_api_key = "test-key" if with_brave else None
     return m
 
 
@@ -80,20 +81,20 @@ def test_root_url_bad_input():
     assert _root_url("not-a-url") is None
 
 
-# ── CSE discovery ────────────────────────────────────────────────────────────
+# ── Brave Search discovery ────────────────────────────────────────────────────
 
 @respx.mock
-def test_cse_returns_empty_without_credentials():
-    candidates = discover_via_google_cse(["hvac exam prep"], "US", _mock_settings(with_cse=False))
+def test_brave_returns_empty_without_credentials():
+    candidates = discover_via_brave_search(["hvac exam prep"], "US", _mock_settings(with_brave=False))
     assert candidates == []
 
 
 @respx.mock
-def test_cse_filters_junk_domains():
-    respx.get("https://www.googleapis.com/customsearch/v1").mock(
-        return_value=httpx.Response(200, json=_CSE_RESPONSE)
+def test_brave_filters_junk_domains():
+    respx.get("https://api.search.brave.com/res/v1/web/search").mock(
+        return_value=httpx.Response(200, json=_BRAVE_RESPONSE)
     )
-    candidates = discover_via_google_cse(["hvac exam prep"], "US", _mock_settings())
+    candidates = discover_via_brave_search(["hvac exam prep"], "US", _mock_settings())
     domains = [c.website_url for c in candidates]
     assert "https://hvacschool.com" in domains
     assert "https://examprep.com" in domains
@@ -101,11 +102,11 @@ def test_cse_filters_junk_domains():
 
 
 @respx.mock
-def test_cse_deduplicates_across_keywords():
-    respx.get("https://www.googleapis.com/customsearch/v1").mock(
-        return_value=httpx.Response(200, json=_CSE_RESPONSE)
+def test_brave_deduplicates_across_keywords():
+    respx.get("https://api.search.brave.com/res/v1/web/search").mock(
+        return_value=httpx.Response(200, json=_BRAVE_RESPONSE)
     )
-    candidates = discover_via_google_cse(
+    candidates = discover_via_brave_search(
         ["hvac exam prep", "hvac license exam"], "US", _mock_settings()
     )
     urls = [c.website_url for c in candidates]
@@ -113,21 +114,20 @@ def test_cse_deduplicates_across_keywords():
 
 
 @respx.mock
-def test_cse_channel_id_format():
-    respx.get("https://www.googleapis.com/customsearch/v1").mock(
-        return_value=httpx.Response(200, json=_CSE_RESPONSE)
+def test_brave_channel_id_format():
+    respx.get("https://api.search.brave.com/res/v1/web/search").mock(
+        return_value=httpx.Response(200, json=_BRAVE_RESPONSE)
     )
-    candidates = discover_via_google_cse(["hvac exam prep"], "US", _mock_settings())
-    assert all(c.channel_id.startswith("cse:") for c in candidates)
+    candidates = discover_via_brave_search(["hvac exam prep"], "US", _mock_settings())
+    assert all(c.channel_id.startswith("brave:") for c in candidates)
 
 
 @respx.mock
-def test_cse_handles_api_error():
-    respx.get("https://www.googleapis.com/customsearch/v1").mock(
-        return_value=httpx.Response(403, json={"error": {"message": "quota exceeded"}})
+def test_brave_handles_api_error():
+    respx.get("https://api.search.brave.com/res/v1/web/search").mock(
+        return_value=httpx.Response(429, json={"error": "rate limit"})
     )
-    # Should not raise — returns empty list and logs warning
-    candidates = discover_via_google_cse(["hvac exam prep"], "US", _mock_settings())
+    candidates = discover_via_brave_search(["hvac exam prep"], "US", _mock_settings())
     assert candidates == []
 
 

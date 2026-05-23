@@ -21,16 +21,14 @@ _PODCAST_HOSTING_DOMAINS = {
     "podcasts.apple.com", "music.amazon.com", "podcastics.com",
 }
 
-# Domains to exclude from CSE results.
-_CSE_EXCLUDED_DOMAINS = {
+# Domains to exclude from web search results.
+_SEARCH_EXCLUDED_DOMAINS = {
     "youtube.com", "facebook.com", "instagram.com", "twitter.com", "x.com",
     "reddit.com", "linkedin.com", "tiktok.com", "amazon.com", "ebay.com",
     "wikipedia.org", "wikihow.com", "quora.com", "udemy.com", "skillshare.com",
     "kaplan.com", "pennfoster.edu", "cengage.com", "wiley.com", "pearson.com",
-    "google.com", "bing.com", "yahoo.com",
+    "google.com", "bing.com", "yahoo.com", "brave.com",
 }
-
-_CSE_GL = {"US": "us", "CA": "ca", "GB": "gb", "AU": "au"}
 
 
 def _domain(url: str) -> Optional[str]:
@@ -55,68 +53,73 @@ def _is_blocked(domain: str, blocklist: set[str]) -> bool:
     return any(domain == d or domain.endswith("." + d) for d in blocklist)
 
 
-def discover_via_google_cse(
+def discover_via_brave_search(
     keywords: list[str],
     country_code: str,
     settings: Settings,
 ) -> list[CandidateChannel]:
     """
-    Discovers prospect websites directly from Google Search results.
+    Discovers prospect websites directly from Brave Search results.
     Every result is a live website already ranking for exam-prep queries —
     far higher signal than hoping a YouTube channel put its URL in its description.
-    Returns [] silently if GOOGLE_CSE_API_KEY or GOOGLE_CSE_CX are not configured.
-    Quota cost: 1 unit per keyword (100 free/day, then $5/1000 queries).
+    Returns [] silently if BRAVE_SEARCH_API_KEY is not configured.
+    Free tier: 2,000 queries/month at api.search.brave.com.
     """
-    if not settings.google_cse_api_key or not settings.google_cse_cx:
+    if not settings.brave_search_api_key:
         return []
 
     seen: set[str] = set()
     candidates: list[CandidateChannel] = []
-    gl = _CSE_GL.get(country_code, "us")
 
     for keyword in keywords:
-        logger.info("Google CSE: '{}'", keyword)
+        logger.info("Brave Search: '{}'", keyword)
         try:
             resp = httpx.get(
-                "https://www.googleapis.com/customsearch/v1",
+                "https://api.search.brave.com/res/v1/web/search",
+                headers={
+                    "Accept": "application/json",
+                    "Accept-Encoding": "gzip",
+                    "X-Subscription-Token": settings.brave_search_api_key,
+                },
                 params={
-                    "key": settings.google_cse_api_key,
-                    "cx": settings.google_cse_cx,
                     "q": keyword,
-                    "num": 10,
-                    "gl": gl,
+                    "count": 10,
+                    "country": country_code,
+                    "search_lang": "en",
+                    "result_filter": "web",
                 },
                 timeout=10.0,
             )
             resp.raise_for_status()
 
-            for item in resp.json().get("items", []):
-                url = item.get("link", "")
+            results = resp.json().get("web", {}).get("results", [])
+            for item in results:
+                url = item.get("url", "")
                 domain = _domain(url)
                 if not domain or domain in seen:
                     continue
-                if _is_blocked(domain, _CSE_EXCLUDED_DOMAINS):
+                if _is_blocked(domain, _SEARCH_EXCLUDED_DOMAINS):
                     continue
 
                 seen.add(domain)
                 candidates.append(
                     CandidateChannel(
-                        channel_id=f"cse:{domain}",
+                        channel_id=f"brave:{domain}",
                         name=item.get("title", domain)[:200],
                         subscriber_count=0,
                         country=country_code,
                         website_url=_root_url(url) or url,
                         youtube_url="",
-                        description_snippet=(item.get("snippet") or "")[:500] or None,
+                        description_snippet=(item.get("description") or "")[:500] or None,
                     )
                 )
 
             time.sleep(0.1)
 
         except Exception as exc:
-            logger.warning("Google CSE failed for '{}': {}", keyword, exc)
+            logger.warning("Brave Search failed for '{}': {}", keyword, exc)
 
-    logger.info("Google CSE: {} unique websites discovered", len(candidates))
+    logger.info("Brave Search: {} unique websites discovered", len(candidates))
     return candidates
 
 
