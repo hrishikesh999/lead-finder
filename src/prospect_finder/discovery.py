@@ -223,7 +223,9 @@ def search_youtube_channels(
                 logger.debug("{} channels skipped (no website) for '{}'", dropped, keyword)
 
             all_candidates.extend(with_website)
-            time.sleep(0.1)
+            # YouTube allows ~10 search.list calls/minute; each keyword burns 2
+            # (channel + video search). Sleep 12s to stay safely under the cap.
+            time.sleep(12)
 
         except Exception as exc:
             logger.warning("Error processing keyword '{}': {}", keyword, exc)

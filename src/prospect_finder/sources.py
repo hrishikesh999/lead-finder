@@ -28,6 +28,12 @@ _SEARCH_EXCLUDED_DOMAINS = {
     "wikipedia.org", "wikihow.com", "quora.com", "udemy.com", "skillshare.com",
     "kaplan.com", "pennfoster.edu", "cengage.com", "wiley.com", "pearson.com",
     "google.com", "bing.com", "yahoo.com", "brave.com",
+    # Job boards
+    "indeed.com", "glassdoor.com", "ziprecruiter.com", "monster.com", "careerbuilder.com",
+    # Large study/MOOC platforms (not independent creators)
+    "quizlet.com", "coursera.org", "edx.org", "khanacademy.org", "chegg.com",
+    # Trade software / directories (not exam prep)
+    "jobber.com", "housecallpro.com", "servicetitan.com", "angi.com", "thumbtack.com",
 }
 
 
