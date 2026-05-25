@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import time
 from typing import Optional
 
@@ -15,10 +16,71 @@ _GENERIC_EMAIL_PREFIXES = {
     "sales", "team", "noreply", "no-reply", "mail", "office",
 }
 
+_EMAIL_RE = re.compile(r'\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b')
+
+# Domains belonging to platforms/CDNs — not the site owner's email
+_JUNK_EMAIL_DOMAINS = {
+    "example.com", "sentry.io", "gravatar.com", "w3.org",
+    "wordpress.com", "wpengine.com", "cloudflare.com",
+    "google.com", "googleapis.com", "amazonaws.com",
+    "akamai.com", "fastly.com", "jsdelivr.net",
+}
+
+_SCRAPE_PATHS = ["/", "/contact", "/contact-us", "/about", "/about-us"]
+_SCRAPE_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/124.0.0.0 Safari/537.36"
+    ),
+    "Accept": "text/html,application/xhtml+xml",
+}
+
 
 def _is_personal_email(email: str) -> bool:
     prefix = email.split("@")[0].lower()
     return prefix not in _GENERIC_EMAIL_PREFIXES
+
+
+def _scrape_contact_email(domain: str) -> Optional[tuple[str, int]]:
+    """
+    Fetches contact/about pages and extracts email addresses directly.
+    Prefers emails on the site's own domain (e.g. john@hvacschool.com).
+    Returns (email, 90) — confidence 90 since the email is on the site itself.
+    Falls through silently if nothing is found or all requests fail.
+    """
+    own_domain: list[str] = []
+    other: list[str] = []
+
+    with httpx.Client(timeout=10.0, follow_redirects=True, headers=_SCRAPE_HEADERS) as client:
+        for path in _SCRAPE_PATHS:
+            try:
+                resp = client.get(f"https://{domain}{path}")
+                if resp.status_code != 200:
+                    continue
+                for match in _EMAIL_RE.finditer(resp.text):
+                    email = match.group(0).lower()
+                    local, _, email_domain = email.partition("@")
+                    if not email_domain:
+                        continue
+                    if local in _GENERIC_EMAIL_PREFIXES:
+                        continue
+                    if email_domain in _JUNK_EMAIL_DOMAINS or any(
+                        email_domain.endswith("." + j) for j in _JUNK_EMAIL_DOMAINS
+                    ):
+                        continue
+                    is_own = email_domain == domain or email_domain.endswith("." + domain)
+                    if is_own:
+                        if email not in own_domain:
+                            own_domain.append(email)
+                    else:
+                        if email not in other:
+                            other.append(email)
+            except Exception:
+                continue
+
+    best = own_domain[0] if own_domain else (other[0] if other else None)
+    return (best, 90) if best else None
 
 
 def find_email_for_founder(
@@ -32,6 +94,12 @@ def find_email_for_founder(
     Returns (email, confidence) or None.
     Falls back to domain search if last_name is empty (single-name founders).
     """
+    # Try scraping the site directly — catches emails Hunter.io never indexed
+    scraped = _scrape_contact_email(domain)
+    if scraped:
+        logger.debug("Scraped email for {}: {}", domain, scraped[0])
+        return scraped
+
     if not last_name:
         logger.debug("No last name for founder '{}' on {}, falling back to domain search", first_name, domain)
         return find_email_for_domain(domain, settings)
@@ -80,6 +148,12 @@ def find_email_for_domain(
     Hunter.io Domain Search. Used when Claude could not identify a founder.
     Picks the best personal-pattern email. Returns (email, confidence) or None.
     """
+    # Try scraping the site directly first
+    scraped = _scrape_contact_email(domain)
+    if scraped:
+        logger.debug("Scraped email for {}: {}", domain, scraped[0])
+        return scraped
+
     params = {
         "domain": domain,
         "type": "personal",

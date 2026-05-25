@@ -15,7 +15,7 @@ from .config import Settings, load_keywords
 from .database import get_trade_stats, init_db, load_seen_sets, record_prospects
 from .discovery import search_youtube_channels
 from .extraction import batch_extract
-from .sources import discover_via_serper_search, discover_via_podcasts
+from .sources import discover_via_serper_search, discover_via_course_search, discover_via_podcasts
 from .models import RunStats, VerifiedProspect
 from .sheets import (
     TAB_FOUNDER_IDENTIFIED,
@@ -124,12 +124,13 @@ def run(trade: str, country: str, limit: int, dry_run: bool) -> None:
         max_results_per_keyword=50,
     )
     serper_candidates = discover_via_serper_search(keywords, country_code, settings)
+    course_candidates = discover_via_course_search(keywords, country_code, settings)
     podcast_candidates = discover_via_podcasts(keywords, country_code)
 
     # Merge all sources, deduplicating by domain
     seen_domains: set[str] = set()
     raw_candidates: list = []
-    for c in yt_candidates + serper_candidates + podcast_candidates:
+    for c in yt_candidates + serper_candidates + course_candidates + podcast_candidates:
         d = _extract_domain(c.website_url or "")
         if d and d not in seen_domains:
             seen_domains.add(d)
@@ -137,8 +138,8 @@ def run(trade: str, country: str, limit: int, dry_run: bool) -> None:
 
     stats.channels_discovered = len(raw_candidates)
     logger.info(
-        "Discovered {} total ({} YouTube, {} Serper, {} podcasts)",
-        len(raw_candidates), len(yt_candidates), len(serper_candidates), len(podcast_candidates),
+        "Discovered {} total ({} YouTube, {} Serper, {} course, {} podcasts)",
+        len(raw_candidates), len(yt_candidates), len(serper_candidates), len(course_candidates), len(podcast_candidates),
     )
 
     # ── Website dedup filter ─────────────────────────────────────────────────

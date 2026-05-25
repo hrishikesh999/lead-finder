@@ -11,6 +11,7 @@ from prospect_finder.sources import (
     _root_url,
     _SEARCH_EXCLUDED_DOMAINS,
     discover_via_serper_search,
+    discover_via_course_search,
     discover_via_podcasts,
 )
 
@@ -127,6 +128,33 @@ def test_serper_handles_api_error():
     )
     candidates = discover_via_serper_search(["hvac exam prep"], "US", _mock_settings())
     assert candidates == []
+
+
+# ── Course Search discovery ───────────────────────────────────────────────────
+
+@respx.mock
+def test_course_search_returns_empty_without_credentials():
+    candidates = discover_via_course_search(["HVAC exam prep"], "US", _mock_settings(with_serper=False))
+    assert candidates == []
+
+
+@respx.mock
+def test_course_search_channel_id_format():
+    respx.post("https://google.serper.dev/search").mock(
+        return_value=httpx.Response(200, json=_SERPER_RESPONSE)
+    )
+    candidates = discover_via_course_search(["HVAC exam prep"], "US", _mock_settings())
+    assert all(c.channel_id.startswith("course:") for c in candidates)
+
+
+@respx.mock
+def test_course_search_deduplicates():
+    respx.post("https://google.serper.dev/search").mock(
+        return_value=httpx.Response(200, json=_SERPER_RESPONSE)
+    )
+    candidates = discover_via_course_search(["HVAC exam prep"], "US", _mock_settings())
+    urls = [c.website_url for c in candidates]
+    assert len(urls) == len(set(urls))
 
 
 # ── Podcast discovery ────────────────────────────────────────────────────────

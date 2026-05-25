@@ -75,7 +75,11 @@ Definitions:
 - "enterprise" = 50+ people or part of a larger education company
 - "has_newsletter_signal" = visible email signup form, popup, or "subscribe" button
 - "has_lead_magnet_signal" = free downloadable resource (study guide, practice test, etc.) gated behind email
-- trade_focus_matches_target = false if the site is clearly not about {trade} licensing or exam prep
+- trade_focus_matches_target = true if the site teaches, trains, or educates about any aspect of
+  {trade} skills, certifications, or career advancement — online courses, video lessons, study guides,
+  podcasts, apprenticeship prep, or exam prep all count, even if exam prep is just part of what they offer.
+  Mark false ONLY if the site is clearly non-educational: a contractor service company, equipment
+  retailer, parts supplier, job board, or general news/blog with nothing to sell or teach.
 
 HTML content:
 {content}"""
