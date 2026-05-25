@@ -53,48 +53,41 @@ def _is_blocked(domain: str, blocklist: set[str]) -> bool:
     return any(domain == d or domain.endswith("." + d) for d in blocklist)
 
 
-def discover_via_brave_search(
+def discover_via_serper_search(
     keywords: list[str],
     country_code: str,
     settings: Settings,
 ) -> list[CandidateChannel]:
     """
-    Discovers prospect websites directly from Brave Search results.
-    Every result is a live website already ranking for exam-prep queries —
-    far higher signal than hoping a YouTube channel put its URL in its description.
-    Returns [] silently if BRAVE_SEARCH_API_KEY is not configured.
-    Free tier: 2,000 queries/month at api.search.brave.com.
+    Discovers prospect websites via Serper.dev (Google Search API).
+    Every result is a live website already ranking for exam-prep queries.
+    Returns [] silently if SERPER_API_KEY is not configured.
+    Free tier: 2,500 queries/month at serper.dev (no credit card required).
     """
-    if not settings.brave_search_api_key:
+    if not settings.serper_api_key:
         return []
 
     seen: set[str] = set()
     candidates: list[CandidateChannel] = []
+    gl = country_code.lower()  # Serper uses lowercase ISO country codes
 
     for keyword in keywords:
-        logger.info("Brave Search: '{}'", keyword)
+        logger.info("Serper Search: '{}'", keyword)
         try:
-            resp = httpx.get(
-                "https://api.search.brave.com/res/v1/web/search",
+            resp = httpx.post(
+                "https://google.serper.dev/search",
                 headers={
-                    "Accept": "application/json",
-                    "Accept-Encoding": "gzip",
-                    "X-Subscription-Token": settings.brave_search_api_key,
+                    "X-API-KEY": settings.serper_api_key,
+                    "Content-Type": "application/json",
                 },
-                params={
-                    "q": keyword,
-                    "count": 10,
-                    "country": country_code,
-                    "search_lang": "en",
-                    "result_filter": "web",
-                },
+                json={"q": keyword, "gl": gl, "num": 10},
                 timeout=10.0,
             )
             resp.raise_for_status()
 
-            results = resp.json().get("web", {}).get("results", [])
+            results = resp.json().get("organic", [])
             for item in results:
-                url = item.get("url", "")
+                url = item.get("link", "")
                 domain = _domain(url)
                 if not domain or domain in seen:
                     continue
@@ -104,22 +97,22 @@ def discover_via_brave_search(
                 seen.add(domain)
                 candidates.append(
                     CandidateChannel(
-                        channel_id=f"brave:{domain}",
+                        channel_id=f"serper:{domain}",
                         name=item.get("title", domain)[:200],
                         subscriber_count=0,
                         country=country_code,
                         website_url=_root_url(url) or url,
                         youtube_url="",
-                        description_snippet=(item.get("description") or "")[:500] or None,
+                        description_snippet=(item.get("snippet") or "")[:500] or None,
                     )
                 )
 
             time.sleep(0.1)
 
         except Exception as exc:
-            logger.warning("Brave Search failed for '{}': {}", keyword, exc)
+            logger.warning("Serper Search failed for '{}': {}", keyword, exc)
 
-    logger.info("Brave Search: {} unique websites discovered", len(candidates))
+    logger.info("Serper Search: {} unique websites discovered", len(candidates))
     return candidates
 
 

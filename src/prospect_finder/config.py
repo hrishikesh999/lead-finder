@@ -31,9 +31,9 @@ class Settings(BaseSettings):
     claude_model: str = "claude-haiku-4-5-20251001"
     log_level: str = "INFO"
 
-    # Optional: Brave Search API (direct website discovery)
-    # If not set, Brave Search discovery is silently skipped.
-    brave_search_api_key: Optional[str] = None
+    # Optional: Serper.dev API key (Google Search, direct website discovery)
+    # If not set, Serper Search discovery is silently skipped.
+    serper_api_key: Optional[str] = None
 
     @property
     def allowed_countries_set(self) -> set[str]:
