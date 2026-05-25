@@ -47,7 +47,7 @@ def test_extraction_defaults():
     assert e.has_newsletter_signal is False
     assert e.has_lead_magnet_signal is False
     assert e.is_enterprise_player is False
-    assert e.trade_focus_matches_target is True
+    assert e.trade_focus_matches_target is False
     assert e.founder_name is None
 
 

@@ -1,9 +1,19 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import Optional
+from typing import Annotated, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, BeforeValidator
+
+
+def _coerce_bool(v: object) -> bool:
+    """Coerce explicit JSON null to False so Claude's null-for-uncertain doesn't crash."""
+    if v is None:
+        return False
+    return v  # type: ignore[return-value]
+
+
+NullableBool = Annotated[bool, BeforeValidator(_coerce_bool)]
 
 
 class CandidateChannel(BaseModel):
@@ -25,10 +35,10 @@ class ExtractionResult(BaseModel):
     founder_name: Optional[str] = None
     founder_role: Optional[str] = None
     team_size_signal: Optional[str] = None  # solo | small | mid | enterprise | unknown
-    has_newsletter_signal: bool = False
-    has_lead_magnet_signal: bool = False
-    is_enterprise_player: bool = False
-    trade_focus_matches_target: bool = True
+    has_newsletter_signal: NullableBool = False
+    has_lead_magnet_signal: NullableBool = False
+    is_enterprise_player: NullableBool = False
+    trade_focus_matches_target: NullableBool = False
     notes: Optional[str] = None
     extraction_confidence: Optional[str] = None  # high | medium | low
 

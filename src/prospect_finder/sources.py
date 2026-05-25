@@ -18,7 +18,9 @@ _PODCAST_HOSTING_DOMAINS = {
     "fireside.fm", "spreaker.com", "acast.com", "megaphone.fm",
     "omny.fm", "pinecast.com", "redcircle.com", "captivate.fm",
     "audioboom.com", "rss.com", "iheart.com", "podcastics.com",
-    "podcasts.apple.com", "music.amazon.com", "podcastics.com",
+    # Apple — both subdomains appear in iTunes API responses
+    "podcasts.apple.com", "apps.apple.com", "apple.com",
+    "music.amazon.com",
 }
 
 # Domains to exclude from web search results.
@@ -28,12 +30,23 @@ _SEARCH_EXCLUDED_DOMAINS = {
     "wikipedia.org", "wikihow.com", "quora.com", "udemy.com", "skillshare.com",
     "kaplan.com", "pennfoster.edu", "cengage.com", "wiley.com", "pearson.com",
     "google.com", "bing.com", "yahoo.com", "brave.com",
+    # Google utility pages (forms, docs, etc. — not websites)
+    "forms.gle", "docs.google.com", "drive.google.com",
     # Job boards
     "indeed.com", "glassdoor.com", "ziprecruiter.com", "monster.com", "careerbuilder.com",
     # Large study/MOOC platforms (not independent creators)
     "quizlet.com", "coursera.org", "edx.org", "khanacademy.org", "chegg.com",
     # Trade software / directories (not exam prep)
     "jobber.com", "housecallpro.com", "servicetitan.com", "angi.com", "thumbtack.com",
+    # Testing/licensing agencies — not educators
+    "prometric.com", "psiexams.com", "psionline.com", "provexam.com",
+    "nictesting.org", "pearsonvue.com", "prometrics.com",
+    # Education directories and aggregators
+    "educations.com", "research.com", "academicinfo.net", "niche.com",
+    "petersons.com", "cappex.com", "collegedunia.com",
+    # Large national publishers / CE platforms (not independent creators)
+    "milady.com", "miladypro.com", "miladytraining.com",
+    "elitelearning.com", "elitecme.com",
 }
 
 
@@ -56,6 +69,9 @@ def _root_url(url: str) -> Optional[str]:
 
 
 def _is_blocked(domain: str, blocklist: set[str]) -> bool:
+    # Reject government domains globally — state/federal licensing boards are not prospects.
+    if domain.endswith(".gov") or domain.endswith(".gov.uk") or domain.endswith(".gov.au"):
+        return True
     return any(domain == d or domain.endswith("." + d) for d in blocklist)
 
 
@@ -166,9 +182,6 @@ def discover_via_course_search(
     results = _run_serper_queries(queries, country_code, settings, "course", seen)
     logger.info("Course Search: {} unique websites discovered", len(results))
     return results
-
-    logger.info("Serper Search: {} unique websites discovered", len(candidates))
-    return candidates
 
 
 def discover_via_podcasts(

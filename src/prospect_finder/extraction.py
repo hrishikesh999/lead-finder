@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import random
 import re
 import time
 from typing import Optional
@@ -18,14 +19,14 @@ from .models import CandidateChannel, EnrichedCandidate, ExtractionResult
 _FOLLOW_PATHS = ["/about", "/about-us", "/team", "/our-story", "/contact"]
 _MAX_PAGES = 5
 _FETCH_TIMEOUT = 15.0
-_MAX_CONCURRENT = 8
+_MAX_CONCURRENT = 4
 _MAX_HTML_CHARS = 40_000
 
 _CLAUDE_SYSTEM_PROMPT = (
     "You are an information extraction assistant specializing in identifying "
     "business founders and operators from website content. Extract information "
-    "accurately and conservatively — if you are not confident, leave fields null "
-    "rather than guessing."
+    "accurately and conservatively — if you are not confident about string fields, "
+    "leave them null. For boolean fields, always return true or false — never null."
 )
 
 _ENTERPRISE_PLAYERS: dict[str, str] = {
@@ -149,8 +150,8 @@ def _call_claude(
         except Exception as exc:
             msg = str(exc)
             if "rate_limit_error" in msg or "529" in msg:
-                wait = 30 * (2 ** attempt)
-                logger.debug("Claude rate limit hit for {}, retrying in {}s", url, wait)
+                wait = 30 * (2 ** attempt) + random.uniform(0, 10)
+                logger.debug("Claude rate limit hit for {}, retrying in {:.1f}s", url, wait)
                 time.sleep(wait)
                 continue
             logger.warning("Claude extraction failed for {}: {}", url, exc)
