@@ -78,7 +78,7 @@ def main():
     "--limit",
     default=400,
     show_default=True,
-    help="Max candidates to process",
+    help="Max qualified prospects to write to output (all discovered candidates are extracted first)",
 )
 @click.option(
     "--dry-run",
@@ -150,11 +150,14 @@ def run(trade: str, country: str, limit: int, dry_run: bool) -> None:
     stats.channels_after_website_dedup = len(deduped)
     logger.info("{} channels after website dedup", stats.channels_after_website_dedup)
 
-    # ── Apply limit ──────────────────────────────────────────────────────────
-    limited = deduped[:limit]
-
     # ── Async website extraction ─────────────────────────────────────────────
-    enriched = asyncio.run(batch_extract(limited, trade, country_code, settings))
+    # Process up to max_candidates_per_run regardless of --limit.
+    # --limit caps the number of qualified prospects written to output, not how
+    # many candidates we inspect. Without this, a limit=20 run only looks at
+    # 20 sites and most get filtered out as non-exam-prep, leaving 0-1 results.
+    to_extract = deduped[:settings.max_candidates_per_run]
+    logger.info("Processing {} candidates through extraction (limit={} output)", len(to_extract), limit)
+    enriched = asyncio.run(batch_extract(to_extract, trade, country_code, settings))
     stats.channels_extracted = len(enriched)
 
     # ── Filter enterprise players ────────────────────────────────────────────
@@ -174,6 +177,9 @@ def run(trade: str, country: str, limit: int, dry_run: bool) -> None:
             logger.debug("Dropping trade mismatch: {}", ec.channel.name)
         else:
             trade_matched.append(ec)
+
+    # ── Apply output limit after quality filtering ───────────────────────────
+    trade_matched = trade_matched[:limit]
 
     # ── Split into buckets ───────────────────────────────────────────────────
     bucket_a = [ec for ec in trade_matched if ec.extraction.founder_name]
