@@ -1,55 +1,28 @@
-name: Run Prospect Finder
+name: Run Prospect Qualifier
 
 on:
   workflow_dispatch:
     inputs:
-      trade:
-        description: "Trade vertical to search"
-        required: true
-        type: choice
-        options:
-          - hvac
-          - electrical
-          - plumbing
-          - gas
-          - welding
-          - cdl
-          - hgv
-          - heavy_vehicle
-          - heavy_equipment
-          - auto_mechanic
-          - cosmetology
-          - barbering
-          - real_estate
-          - general_contractor
-          - home_inspector
-          - solar
-          - cscs
-          - white_card
-      country:
-        description: "Country to target"
-        required: true
-        type: choice
-        options:
-          - us
-          - ca
-          - uk
-          - au
-      limit:
-        description: "Max candidates to process"
+      sample_size:
+        description: "Rows to sample from the CSVs (default: 500)"
         required: false
-        default: "400"
+        default: "500"
         type: string
-      dry_run:
-        description: "Dry run (skip Hunter.io and all writes)"
+      include_org:
+        description: "Include .org domains (excluded by default)"
         required: false
         default: false
         type: boolean
 
+# Prerequisites before triggering this workflow:
+#   1. Drop activecampaign.csv and/or keap.csv into the input/ folder
+#   2. git add input/*.csv && git commit && git push
+#   3. Trigger this workflow from the Actions tab
+
 jobs:
-  find-prospects:
+  qualify-prospects:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 90
 
     steps:
       - name: Checkout repository
@@ -66,18 +39,12 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
-      - name: Run prospect finder
+      - name: Run prospect qualifier
         run: |
-          uv run prospect-finder run \
-            --trade ${{ inputs.trade }} \
-            --country ${{ inputs.country }} \
-            --limit ${{ inputs.limit }} \
-            ${{ inputs.dry_run == 'true' && '--dry-run' || '' }}
+          uv run python qualify.py \
+            --sample-size ${{ inputs.sample_size }} \
+            ${{ inputs.include_org == 'true' && '--include-org' || '' }}
         env:
-          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          HUNTER_API_KEY: ${{ secrets.HUNTER_API_KEY }}
           GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
           GOOGLE_SHEETS_CREDENTIALS_JSON: ${{ secrets.GOOGLE_SHEETS_CREDENTIALS_JSON }}
-          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
-          SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
