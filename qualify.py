@@ -75,6 +75,7 @@ GOOGLE_SHEET_ID = os.environ.get("GOOGLE_SHEET_ID", "")
 GOOGLE_SHEETS_CREDENTIALS_JSON = os.environ.get("GOOGLE_SHEETS_CREDENTIALS_JSON", "{}")
 GOOGLE_DRIVE_FOLDER_ID = os.environ.get("GOOGLE_DRIVE_FOLDER_ID", "")
 TAB_NAME = os.environ.get("PROSPECT_TAB_NAME", "Prospects")
+PROCESSED_TAB_NAME = os.environ.get("PROCESSED_TAB_NAME", "Processed")
 INPUT_FOLDER = Path(os.environ.get("INPUT_FOLDER", "input"))
 DEFAULT_SAMPLE_SIZE = int(os.environ.get("DEFAULT_SAMPLE_SIZE", "500"))
 MAX_FETCH_CONCURRENCY = int(os.environ.get("MAX_FETCH_CONCURRENCY", "10"))
@@ -342,6 +343,47 @@ def append_row_to_sheet(sheet_id: str, tab_name: str, prospect: dict) -> None:
     ws.append_row(row, value_input_option="USER_ENTERED")
 
 
+def get_processed_domains(sheet_id: str, tab_name: str) -> set[str]:
+    """Domains Claude already evaluated (kept or dropped) — skip these next run."""
+    try:
+        client = _sheet_client()
+        spreadsheet = client.open_by_key(sheet_id)
+        try:
+            ws = spreadsheet.worksheet(tab_name)
+        except gspread.WorksheetNotFound:
+            return set()
+        all_values = ws.get_all_values()
+        # Domain is always the first column; skip header row
+        return {
+            row[0].strip().lower()
+            for row in all_values[1:]
+            if row and row[0].strip()
+        }
+    except Exception as exc:
+        print(f"  WARNING: Could not read Processed tab ({exc}); some rows may be re-sampled.")
+        return set()
+
+
+def append_processed_batch(
+    sheet_id: str,
+    tab_name: str,
+    entries: list[tuple[str, str]],  # (domain, rejection_reason)
+) -> None:
+    """Batch-write Claude-evaluated domains to the Processed tab at end of run."""
+    if not entries:
+        return
+    client = _sheet_client()
+    spreadsheet = client.open_by_key(sheet_id)
+    try:
+        ws = spreadsheet.worksheet(tab_name)
+    except gspread.WorksheetNotFound:
+        ws = spreadsheet.add_worksheet(title=tab_name, rows=5000, cols=3)
+        ws.append_row(["Domain", "Processed Date", "Rejection Reason"])
+    today = date.today().isoformat()
+    rows = [[domain, today, reason] for domain, reason in entries]
+    ws.append_rows(rows, value_input_option="USER_ENTERED")
+
+
 # ── HTML TEXT EXTRACTION ──────────────────────────────────────────────────────
 
 def extract_text(html: str) -> str:
@@ -467,6 +509,7 @@ async def run_async(
         "dropped": defaultdict(int),
         "total_input_tokens": 0,
         "total_output_tokens": 0,
+        "processed_entries": [],  # (domain, rejection_reason) for Processed tab
     }
 
     total = len(rows)
@@ -498,13 +541,19 @@ async def run_async(
                         stats["kept"] += 1
                     except Exception as exc:
                         print(f"\n  WARNING: Sheet write failed for {row['domain']}: {exc}")
+                # Record as processed so it isn't sampled again (sheet dedup already
+                # handles this, but belt-and-suspenders costs nothing)
+                stats["processed_entries"].append((row["domain"], "kept"))
             elif status == "fetch_failed":
+                # Intentionally not recorded — fetch failures stay in the pool for retry
                 stats["fetch_failed"] += 1
             elif status == "claude_error":
+                # Transient API error — leave in pool so next run can retry
                 stats["claude_error"] += 1
             elif status.startswith("dropped:"):
                 reason = status[len("dropped:"):]
                 stats["dropped"][reason] += 1
+                stats["processed_entries"].append((row["domain"], reason))
 
             completed += 1
             if completed % 10 == 0 or completed == total:
@@ -595,12 +644,16 @@ def main() -> None:
     # Step 3: Dedup against sheet
     print("\nStep 3: Deduplicating against existing sheet...")
     existing_domains = get_existing_domains(GOOGLE_SHEET_ID, TAB_NAME)
-    print(f"  Existing domains in sheet: {len(existing_domains):,}")
+    processed_domains = get_processed_domains(GOOGLE_SHEET_ID, PROCESSED_TAB_NAME)
+    skip_set = existing_domains | processed_domains
+    print(f"  Qualified prospects in sheet:  {len(existing_domains):,}")
+    print(f"  Previously evaluated (dropped): {len(processed_domains):,}")
+    print(f"  Total domains to skip:          {len(skip_set):,}")
     before_dedup = len(filtered_rows)
-    filtered_rows = [r for r in filtered_rows if r["domain"] not in existing_domains]
+    filtered_rows = [r for r in filtered_rows if r["domain"] not in skip_set]
     skipped_dedup = before_dedup - len(filtered_rows)
-    print(f"  Skipped (already in sheet): {skipped_dedup:,}")
-    print(f"  Remaining: {len(filtered_rows):,}")
+    print(f"  Skipped this run:               {skipped_dedup:,}")
+    print(f"  Remaining eligible:             {len(filtered_rows):,}")
 
     # Step 4: Sample
     print(f"\nStep 4: Sampling up to {args.sample_size:,} rows...")
@@ -627,6 +680,14 @@ def main() -> None:
     print()
 
     stats = asyncio.run(run_async(sample, GOOGLE_SHEET_ID, TAB_NAME))
+
+    # Record all Claude-evaluated domains to the Processed tab
+    if stats["processed_entries"]:
+        print(f"Recording {len(stats['processed_entries']):,} processed domains to sheet...")
+        try:
+            append_processed_batch(GOOGLE_SHEET_ID, PROCESSED_TAB_NAME, stats["processed_entries"])
+        except Exception as exc:
+            print(f"  WARNING: Could not write to Processed tab: {exc}")
 
     # Summary
     elapsed = time.time() - start_time
