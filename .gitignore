@@ -38,3 +38,6 @@ Thumbs.db
 # Logs
 *.log
 logs/
+
+# Input CSVs (user-provided BuiltWith exports, not committed)
+input/*.csv
