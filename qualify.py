@@ -99,10 +99,17 @@ _FREE_SUBDOMAINS = (
     "tumblr.com",
     "mystrikingly.com",
     "webflow.io",
+    "carrd.co",
+    "notion.site",
+    "webador.com",
+    "jimdosite.com",
+    "yolasite.com",
 )
 _REDFLAG_KEYWORDS = (
     "mlm", "crypto", "casino", "gambling",
     "adult", "xxx", "forex", "binary-option",
+    "poker", "betting", "cannabis", "dispensary",
+    "escort", "porn",
 )
 _VALID_COUNTRIES = frozenset({
     "united states", "us", "usa", "u.s.", "u.s.a.",
@@ -134,7 +141,7 @@ _GOOGLE_SCOPES = [
 # ── CLAUDE PROMPT ─────────────────────────────────────────────────────────────
 
 _HAIKU_PROMPT = """\
-You are qualifying a business homepage as a cold-email prospect for a copywriting agency.
+You are screening business homepages to find prospects for a copywriting agency that writes email sequences and sales copy for small and mid-size businesses.
 
 Homepage text:
 <homepage>
@@ -146,17 +153,27 @@ Return a JSON object with exactly these fields and no other text:
   "company_name": "Business name in plain English (often differs from domain)",
   "founder_name": "First Last if visible on THIS page, else empty string",
   "founder_role": "Title like Founder/CEO/Owner if visible on THIS page, else empty string",
-  "offer_summary": "One sentence describing what this business sells, in plain language. Be specific. Example: \\"Helps real estate agents close more deals through email-driven lead nurture.\\"",
-  "country": "US or Canada or other/unclear — infer from currency, phone format, address, or language",
+  "offer_summary": "One sentence: what does this business sell? Be specific and concrete. Example: \\"Helps real estate agents close more deals through email-driven lead nurture.\\"",
+  "country": "US or Canada or other/unclear — infer from currency, phone format, address, or language on the page",
   "is_real_business": true or false,
-  "rejection_reason": "Empty string if is_real_business is true. Otherwise a short label: parked domain / no visible offer / personal blog / MLM / competing agency / religious org / outside US-Canada / other"
+  "rejection_reason": "Empty string if is_real_business is true. Otherwise one of: parked domain / no visible offer / personal blog / MLM or network marketing / copywriting or marketing agency / large enterprise / religious or political org / outside US-Canada / non-English / other"
 }}
 
-is_real_business is true only when ALL of these are present:
-1. A real product or service is being sold or offered
-2. Some email list activity is visible (subscribe form, lead magnet, newsletter CTA, opt-in offer)
+Set is_real_business to TRUE only when ALL three conditions are met:
+1. The page shows a real business actively selling a product, service, or program
+2. Email list activity is visible: a subscribe form, lead magnet, newsletter CTA, or opt-in offer
+3. The business appears small or mid-size — NOT a large corporation, enterprise software company, or brand with hundreds of employees
 
-When in doubt, set is_real_business to false. Return ONLY the JSON object, no markdown.\
+Set is_real_business to FALSE (and fill in rejection_reason) if ANY of these are true:
+- Parked domain, under construction, or dead/empty site
+- Personal blog or portfolio with no product or service for sale
+- MLM, network marketing, or direct-sales distributor page (an individual rep, not the brand)
+- The business IS a copywriting agency, marketing agency, PR firm, email marketing consultant, or similar — they are competitors, not prospects
+- Large enterprise, Fortune 500, or company that clearly has a substantial in-house team
+- Church, religious organisation, political organisation, or nonprofit
+- Content is primarily non-English or the business clearly serves outside US/Canada
+
+When uncertain, set is_real_business to false. Return ONLY the JSON object, no markdown.\
 """
 
 
