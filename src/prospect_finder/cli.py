@@ -124,7 +124,7 @@ def run(trade: str, country: str, limit: int, dry_run: bool) -> None:
         max_results_per_keyword=50,
     )
     serper_candidates = discover_via_serper_search(keywords, country_code, settings)
-    course_candidates = discover_via_course_search(keywords, country_code, settings)
+    course_candidates = discover_via_course_search(trade, country_code, settings)
     podcast_candidates = discover_via_podcasts(keywords, country_code)
 
     # Merge all sources, deduplicating by domain

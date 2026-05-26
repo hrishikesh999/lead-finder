@@ -134,7 +134,7 @@ def test_serper_handles_api_error():
 
 @respx.mock
 def test_course_search_returns_empty_without_credentials():
-    candidates = discover_via_course_search(["HVAC exam prep"], "US", _mock_settings(with_serper=False))
+    candidates = discover_via_course_search("hvac", "US", _mock_settings(with_serper=False))
     assert candidates == []
 
 
@@ -143,7 +143,7 @@ def test_course_search_channel_id_format():
     respx.post("https://google.serper.dev/search").mock(
         return_value=httpx.Response(200, json=_SERPER_RESPONSE)
     )
-    candidates = discover_via_course_search(["HVAC exam prep"], "US", _mock_settings())
+    candidates = discover_via_course_search("hvac", "US", _mock_settings())
     assert all(c.channel_id.startswith("course:") for c in candidates)
 
 
@@ -152,9 +152,30 @@ def test_course_search_deduplicates():
     respx.post("https://google.serper.dev/search").mock(
         return_value=httpx.Response(200, json=_SERPER_RESPONSE)
     )
-    candidates = discover_via_course_search(["HVAC exam prep"], "US", _mock_settings())
+    candidates = discover_via_course_search("hvac", "US", _mock_settings())
     urls = [c.website_url for c in candidates]
     assert len(urls) == len(set(urls))
+
+
+@respx.mock
+def test_course_search_uses_trade_term_not_first_keyword_word():
+    """Queries must use the full trade name, not just the first word of a keyword."""
+    captured_bodies = []
+
+    def capture(request):
+        captured_bodies.append(request.content.decode())
+        return httpx.Response(200, json={"organic": []})
+
+    respx.post("https://google.serper.dev/search").mock(side_effect=capture)
+    discover_via_course_search("real_estate", "US", _mock_settings())
+
+    assert captured_bodies, "No Serper requests made"
+    assert all("real estate" in body for body in captured_bodies), (
+        f"Expected 'real estate' in all queries, got: {captured_bodies}"
+    )
+    assert not any('"real "' in body or body.startswith('"real ') for body in captured_bodies), (
+        "Query must not use bare 'real' as the trade term"
+    )
 
 
 # ── Podcast discovery ────────────────────────────────────────────────────────

@@ -142,41 +142,51 @@ def discover_via_serper_search(
     return results
 
 
+# Maps internal trade IDs to human-readable search terms used in course queries.
+_TRADE_SEARCH_TERMS: dict[str, str] = {
+    "hvac": "HVAC",
+    "electrical": "electrical",
+    "plumbing": "plumbing",
+    "gas": "gas fitting",
+    "welding": "welding",
+    "cdl": "CDL",
+    "hgv": "HGV",
+    "heavy_vehicle": "heavy vehicle",
+    "heavy_equipment": "heavy equipment",
+    "auto_mechanic": "auto mechanic",
+    "cosmetology": "cosmetology",
+    "barbering": "barbering",
+    "real_estate": "real estate",
+    "general_contractor": "general contractor",
+    "home_inspector": "home inspector",
+    "solar": "solar",
+    "cscs": "CSCS",
+    "white_card": "white card",
+}
+
+
 def discover_via_course_search(
-    keywords: list[str],
+    trade: str,
     country_code: str,
     settings: Settings,
 ) -> list[CandidateChannel]:
     """
     Runs creator-focused Serper queries to find independent trades educators
     who sell online courses or training content but may not rank for exam-prep
-    terms. Generates query variants like "HVAC online training course" and
-    "learn electrical online" from the primary trade keywords.
+    terms. Uses the trade name directly to build targeted queries.
     Returns [] silently if SERPER_API_KEY is not configured.
     """
     if not settings.serper_api_key:
         return []
 
-    # Pull the primary trade term from each keyword (first word), deduplicated.
-    # e.g. ["HVAC exam prep", "EPA 608 study guide"] → ["HVAC", "EPA"]
-    seen_terms: set[str] = set()
-    trade_terms: list[str] = []
-    for kw in keywords:
-        term = kw.split()[0]
-        if term.lower() not in seen_terms:
-            seen_terms.add(term.lower())
-            trade_terms.append(term)
-    trade_terms = trade_terms[:4]  # cap to keep Serper quota reasonable
-
-    queries: list[str] = []
-    for term in trade_terms:
-        queries += [
-            f"{term} online training course",
-            f"{term} instructor online course",
-            f"learn {term} online certification",
-            f"{term} skills training program online",
-            f"{term} apprenticeship training online",
-        ]
+    term = _TRADE_SEARCH_TERMS.get(trade, trade.replace("_", " "))
+    queries = [
+        f"{term} online training course",
+        f"{term} exam prep course",
+        f"learn {term} online certification",
+        f"{term} license exam study course",
+        f"{term} instructor online course",
+    ]
 
     seen: set[str] = set()
     results = _run_serper_queries(queries, country_code, settings, "course", seen)
