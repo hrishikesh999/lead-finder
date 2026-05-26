@@ -14,10 +14,9 @@ on:
         default: false
         type: boolean
 
-# Prerequisites before triggering this workflow:
-#   1. Drop activecampaign.csv and/or keap.csv into the input/ folder
-#   2. git add input/*.csv && git commit && git push
-#   3. Trigger this workflow from the Actions tab
+# Before triggering: upload activecampaign.csv and keap.csv to the Google Drive
+# folder whose ID is stored in the GOOGLE_DRIVE_FOLDER_ID secret. The script
+# downloads them automatically at runtime — no files need to be committed.
 
 jobs:
   qualify-prospects:
@@ -48,4 +47,5 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
           GOOGLE_SHEETS_CREDENTIALS_JSON: ${{ secrets.GOOGLE_SHEETS_CREDENTIALS_JSON }}
+          GOOGLE_DRIVE_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_FOLDER_ID }}
           HUNTER_API_KEY: ${{ secrets.HUNTER_API_KEY }}

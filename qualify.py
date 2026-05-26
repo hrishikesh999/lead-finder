@@ -41,6 +41,8 @@ import gspread
 import httpx
 from bs4 import BeautifulSoup
 from google.oauth2.service_account import Credentials
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseDownload
 
 
 # ── INLINE .env LOADER ────────────────────────────────────────────────────────
@@ -71,6 +73,7 @@ _load_dotenv()
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 GOOGLE_SHEET_ID = os.environ.get("GOOGLE_SHEET_ID", "")
 GOOGLE_SHEETS_CREDENTIALS_JSON = os.environ.get("GOOGLE_SHEETS_CREDENTIALS_JSON", "{}")
+GOOGLE_DRIVE_FOLDER_ID = os.environ.get("GOOGLE_DRIVE_FOLDER_ID", "")
 TAB_NAME = os.environ.get("PROSPECT_TAB_NAME", "Prospects")
 INPUT_FOLDER = Path(os.environ.get("INPUT_FOLDER", "input"))
 DEFAULT_SAMPLE_SIZE = int(os.environ.get("DEFAULT_SAMPLE_SIZE", "500"))
@@ -175,6 +178,44 @@ Set is_real_business to FALSE (and fill in rejection_reason) if ANY of these are
 
 When uncertain, set is_real_business to false. Return ONLY the JSON object, no markdown.\
 """
+
+
+# ── GOOGLE DRIVE DOWNLOAD ─────────────────────────────────────────────────────
+
+_DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.readonly"
+_CSV_NAMES = {"activecampaign.csv", "keap.csv"}
+
+
+def download_csvs_from_drive(folder_id: str, creds_dict: dict, dest: Path) -> None:
+    """Download activecampaign.csv and keap.csv from a shared Drive folder."""
+    import io
+
+    creds = Credentials.from_service_account_info(creds_dict, scopes=[_DRIVE_SCOPE])
+    service = build("drive", "v3", credentials=creds, cache_discovery=False)
+
+    results = service.files().list(
+        q=f"'{folder_id}' in parents and trashed=false",
+        fields="files(id, name)",
+        pageSize=50,
+    ).execute()
+
+    files = {f["name"].lower(): f["id"] for f in results.get("files", [])}
+    found = {name: files[name] for name in _CSV_NAMES if name in files}
+
+    if not found:
+        print(f"  WARNING: Neither activecampaign.csv nor keap.csv found in Drive folder.")
+        return
+
+    dest.mkdir(parents=True, exist_ok=True)
+    for name, file_id in found.items():
+        request = service.files().get_media(fileId=file_id)
+        buf = io.BytesIO()
+        downloader = MediaIoBaseDownload(buf, request)
+        done = False
+        while not done:
+            _, done = downloader.next_chunk()
+        (dest / name).write_bytes(buf.getvalue())
+        print(f"  Downloaded {name} ({len(buf.getvalue()) / 1024:.0f} KB)")
 
 
 # ── CSV READING ───────────────────────────────────────────────────────────────
@@ -512,6 +553,16 @@ def main() -> None:
     print("=" * 60)
     print("BuiltWith Prospect Qualifier")
     print("=" * 60)
+
+    # Step 0: Pull CSVs from Google Drive (if configured)
+    if GOOGLE_DRIVE_FOLDER_ID:
+        print("\nStep 0: Downloading CSVs from Google Drive...")
+        try:
+            creds_dict = json.loads(GOOGLE_SHEETS_CREDENTIALS_JSON)
+            download_csvs_from_drive(GOOGLE_DRIVE_FOLDER_ID, creds_dict, INPUT_FOLDER)
+        except Exception as exc:
+            print(f"  ERROR: Drive download failed: {exc}")
+            print("  Falling back to local files in input/ (if any).")
 
     # Step 1: Read CSVs
     print("\nStep 1: Reading CSVs...")

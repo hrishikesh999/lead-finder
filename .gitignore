@@ -39,5 +39,5 @@ Thumbs.db
 *.log
 logs/
 
-# Input CSVs are intentionally committed so GitHub Actions can read them.
-# If running locally only and you don't want them in git, add input/*.csv here.
+# Input CSVs — sourced from Google Drive at runtime, not committed
+input/*.csv
